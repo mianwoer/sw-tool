@@ -10,6 +10,7 @@ from kafka import KafkaProducer, KafkaConsumer
 import configparser
 import os
 from multiprocessing import Process
+import pandas as pd
 
 """
 使用python直接运行脚本，可以使用  __file__
@@ -184,6 +185,34 @@ if __name__ == '__main__':
         url_suffix += 'systemWeight=' + _ if not url_suffix else '&systemWeight=' + _
     request_url = "http://" + sw_compare_api + "/tuling/mlv/v2/vsPlusCheckResource?" + url_suffix
     lines = 0  # 已写文件的行数
+
+    df = pd.DataFrame(columns=['样本文件', '与垃圾音库比对的最高得分'])
+    score = []
+
+    with open(output_file, 'r') as f:
+        for f_item in f.read().splitlines():  # f_item 包含样本的声纹数据
+            f_item = f_item.split()
+            sw1 = f_item[1]
+            new_line = [f_item[0]]  # 待新增的数据，首先传入样本文件名
+            with open(trash_libs_sw, 'r') as g:
+                for g_item in g.read().splitlines():  # g_item 包含垃圾音库声纹数据
+                    g_item = g_item.split()
+                    sw2 = g_item[1]
+                    body = "[" + '\"' + sw1 + '\",\"' + sw2 + '\"' + "]"
+                    response = requests.post(request_url, headers=headers, data=body)
+                    ret = json.loads(response.text).get('body')
+                    score.append(float(ret))  # 记录得分
+
+            new_line.append(max(score))
+            df.loc[len(df)] = new_line
+            lines += 1
+    logger.info('正在记录声纹比对得分。。。')
+    df.to_excel(sw_compare_result, index=False)
+    end_time = time.time()  # 记录程序结束时间
+    logger.info("本次SW-TOOL程序耗时 %.2f秒" % (end_time - start_time))
+
+"""
+    v1.0.0版本
     with open(output_file, 'r') as f:
         for f_item in f.read().splitlines():  # f_item 包含样本的声纹数据
             f_item = f_item.split()
@@ -201,11 +230,12 @@ if __name__ == '__main__':
                 with open(sw_compare_result, 'w') as h:  # h写入声纹比对结果
                     h.write(f_item[0] + txt)
                     logger.info('正在写入文件：%s的声纹比对结果' % f_item[0])
+                    df = pd.DataFrame(columns=)
+                    df.loc[]
             else:
                 with open(sw_compare_result, 'a') as h:
                     h.write('\n' + f_item[0] + txt)
                     logger.info('正在写入文件：%s的声纹比对结果' % f_item[0])
             lines += 1
+"""
 
-    end_time = time.time()  # 记录程序结束时间
-    logger.info("本次SW-TOOL程序耗时 %.2f秒" % (end_time - start_time))
