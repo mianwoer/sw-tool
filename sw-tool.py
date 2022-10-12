@@ -11,7 +11,6 @@ import configparser
 import os
 from multiprocessing import Process, cpu_count
 import pandas as pd
-from collections import defaultdict
 
 
 # 提供消息体，用于传入提取声纹的kafka topic
@@ -138,6 +137,10 @@ def collect_data(_tuple: tuple):
     scores.append(_tuple[1])
 
 
+def error_callback_func(err):
+    print('出错啦！！%s' % str(err))
+
+
 if __name__ == '__main__':
     multiprocessing.freeze_support()
     """
@@ -209,10 +212,12 @@ if __name__ == '__main__':
     """开始进行声纹比对"""
     logger.info("开始进行声纹比对,自动过滤没有声纹的数据,进程数：%d", proc_num)
     # 请求头
+    # 默认为keep-alive，即连接一次，传输多次，然而在多次访问后不能结束并回到连接池中，导致不能产生新的连接，具体表现为err_callback报错Max retries exceed with URL
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                       'Chrome/100.0.4896.75 Safari/537.36',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Connection': 'close'
     }
     url_suffix = ''
     for _ in systemWeight.split():
@@ -237,12 +242,17 @@ if __name__ == '__main__':
                     sw2 = g_item[1]
                     if sw2 != "task_failed":
                         task = pool.apply_async(process_compare, (f_item[0], sw1, g_item[0], sw2, request_url, headers),
-                                                callback=collect_data)
+                                                callback=collect_data, error_callback=error_callback_func)
                         pool_tasks.append(task)
             [_.wait() for _ in pool_tasks]
-            new_line.append(max(scores))
-            df.loc[len(df)] = new_line
-    # pool.close()
+            try:
+                new_line.append(max(scores))
+                df.loc[len(df)] = new_line
+            except Exception as e:
+                logger.info("警告：%s 文件记录比对得分异常" % f_item[0])
+                raise e
+    pool.close()
+    pool.join()
     logger.info('正在记录声纹比对得分。。。')
     df.to_excel(sw_compare_result, index=False)
     end_time = time.time()  # 记录程序结束时间
